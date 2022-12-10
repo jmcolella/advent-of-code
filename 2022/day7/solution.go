@@ -16,14 +16,6 @@ type linetype struct {
 	Name string
 }
 
-type dir struct {
-	Name     string
-	Parent   string
-	Path     string
-	Children []string
-	Size     int
-}
-
 func parseLine(line string) (*linetype, error) {
 	l := linetype{}
 	commandRegex, err := regexp.Compile(`\$ (\w+)\s?(\D*)`)
@@ -56,111 +48,99 @@ func parseLine(line string) (*linetype, error) {
 	return &l, nil
 }
 
-func dirSize(dirs []*dir, start *dir) int {
-	sizeRegex, err := regexp.Compile(`(\d+) .+`)
-	if err != nil {
-		panic(err)
-	}
+func getSizes(parsedLines []linetype) []int {
+	stack := []int{}
+	sizes := []int{}
 
-	size := 0
+	for _, line := range parsedLines {
+		if line.Type == "cd" {
+			if line.Name == ".." {
+				sizes = append(sizes, stack[len(stack)-1])
+				stack = stack[0 : len(stack)-1]
 
-	for _, c := range start.Children {
-		data := sizeRegex.FindStringSubmatch(c)
-		i, err := strconv.Atoi(data[1])
-		if err != nil {
-			panic(err)
+				if len(stack) > 0 {
+					stack[len(stack)-1] += sizes[len(sizes)-1]
+				}
+			} else {
+				stack = append(stack, 0)
+			}
+		} else if line.Type == "file" {
+			sizeRegex, err := regexp.Compile(`(\d+) .+`)
+			if err != nil {
+				panic(err)
+			}
+			data := sizeRegex.FindStringSubmatch(line.Name)
+			i, err := strconv.Atoi(data[1])
+			if err != nil {
+				panic(err)
+			}
+
+			stack[len(stack)-1] += i
 		}
-
-		size += i
 	}
 
-	for _, d := range dirs {
-		if d.Parent == start.Name && d.Name != start.Name {
-			size += dirSize(dirs, d)
+	for len(stack) > 0 {
+		sizes = append(sizes, stack[len(stack)-1])
+		stack = stack[0 : len(stack)-1]
+		if len(stack) > 0 {
+			stack[len(stack)-1] += sizes[len(sizes)-1]
 		}
 	}
 
-	return size
+	return sizes
 }
 
 func partOne(input []string) (int, error) {
-	dirs := []*dir{}
-	// currPath := []string{}
-	cwd := "/"
-
+	parsedLines := []linetype{}
 	for _, line := range input {
 		parsed, err := parseLine(line)
 		if err != nil {
 			return 0, err
 		}
+		parsedLines = append(parsedLines, *parsed)
 
-		fmt.Printf("\nline %v\n\n", line)
-
-		fmt.Printf("\ncwd %v\n\n", cwd)
-
-		currDirIdx := slices.IndexFunc(dirs, func(d *dir) bool {
-			return d.Name == cwd
-		})
-
-		if parsed.Type == "cd" {
-			if parsed.Name == ".." {
-				currDir := dirs[currDirIdx]
-
-				cwd = currDir.Parent
-
-				// cwd = currPath[len(currPath)-2]
-				// currPath = currPath[0 : len(currPath)-1]
-			} else {
-				dirIdx := slices.IndexFunc(dirs, func(d *dir) bool { return d.Name == parsed.Name })
-
-				if dirIdx < 0 {
-					dirs = append(dirs, &dir{
-						Name:   parsed.Name,
-						Parent: cwd,
-						// Path: strings.Join(currPath, ""),
-					})
-				}
-
-				// currPath = append(currPath, fmt.Sprintf("%s/", parsed.Name))
-
-				cwd = parsed.Name
-			}
-		} else if parsed.Type == "dir" {
-			dirIdx := slices.IndexFunc(dirs, func(d *dir) bool { return d.Name == parsed.Name && d.Parent == cwd })
-
-			if dirIdx < 0 {
-				dirs = append(dirs, &dir{
-					Name:   parsed.Name,
-					Parent: cwd,
-					// Path: strings.Join(currPath, ""),
-				})
-			}
-		} else if parsed.Type == "file" {
-			fmt.Printf("cwd %v\n", cwd)
-
-			fmt.Printf("line %v\n", line)
-			currDir := dirs[currDirIdx]
-
-			currDir.Children = append(currDir.Children, parsed.Name)
-		}
 	}
 
+	sizes := getSizes(parsedLines)
+
 	sizeToCut := 0
-	for _, d := range dirs {
-		// size := dirSize(dirs, d)
-
-		// if size <= 100000 {
-		// 	sizeToCut += size
-		// }
-
-		fmt.Printf("dir Name: %v, Parent: %v, Children: %v\n", d.Name, d.Parent, d.Children)
+	for _, s := range sizes {
+		if s <= 100000 {
+			sizeToCut += s
+		}
 	}
 
 	return sizeToCut, nil
 }
 
 func partTwo(input []string) (int, error) {
-	return 0, nil
+	parsedLines := []linetype{}
+	for _, line := range input {
+		parsed, err := parseLine(line)
+		if err != nil {
+			return 0, err
+		}
+		parsedLines = append(parsedLines, *parsed)
+
+	}
+
+	sizes := getSizes(parsedLines)
+
+	slices.Sort(sizes)
+
+	unused := 70000000 - sizes[len(sizes)-1]
+	needed := 30000000 - unused
+
+	potentialToCut := []int{}
+	for _, s := range sizes {
+		if s >= needed {
+			potentialToCut = append(potentialToCut, s)
+		}
+	}
+
+	slices.Sort(potentialToCut)
+
+	return potentialToCut[0], nil
 }
 
 func (d *Day7) Run() (string, error) {
